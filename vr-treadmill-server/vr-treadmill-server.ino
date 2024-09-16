@@ -1,3 +1,6 @@
+//https://www.youtube.com/watch?v=SEQgnSOUkjw
+//https://www.youtube.com/watch?v=mBaS3YnqDaU&t=1s
+
 /*
     Video: https://www.youtube.com/watch?v=oCMOYS71NIU
     Based on Neil Kolban example for IDF: https://github.com/nkolban/esp32-snippets/blob/master/cpp_utils/tests/BLE%20Tests/SampleNotify.cpp
@@ -23,6 +26,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <string>  // Include the string header
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pControlCharacteristic = NULL;
@@ -45,36 +49,35 @@ uint32_t value = 0;
 uint8_t status = STOPPED;
 uint8_t control = STOPPED; 
 
-class MyServerCallbacks: public BLEServerCallbacks {
+class ConnectionCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       deviceConnected = true;
+      Serial.println("Client connect");
     };
 
     void onDisconnect(BLEServer* pServer) {
       deviceConnected = false;
       status = STOPPED;
       control = STOPPED; 
+      Serial.println("Client disconnect");
     }
 
-    void onWrite(BLECharacteristic *pCharacteristic) {
-      std::string value = pCharacteristic->getValue();
-
-      if (value.length() > 0) {
-        Serial.println("*********");
-        Serial.print("New value: ");
-        for (int i = 0; i < value.length(); i++)
-        {
-          control = value[0];
-          status = control;
-          Serial.print(value[i]);
-        }
-        Serial.println();
-        Serial.println("*********");
-      }
-    }
+    
 };
 
-
+class Characteristicbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+      String value = pCharacteristic->getValue();
+      Serial.print("got: ");
+      for (int i = 0; i < value.length(); i++) {
+        Serial.print(value[i], HEX);
+        Serial.print(" ");  // Add a space between each hex value for readability
+      }
+      control = value[0]; 
+      status = control;
+        
+    }
+};
 
 void setup() {
   pinMode(DRIVE_OUTPUT_PIN, OUTPUT);
@@ -85,7 +88,7 @@ void setup() {
 
   // Create the BLE Server
   pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
+  
 
   // Create the BLE Service
   BLEService *pService = pServer->createService(VR_TREADMILL_SERVICE_UUID);
@@ -104,14 +107,17 @@ void setup() {
                     );
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
   // Create a BLE Descriptor
-  pCharacteristic->addDescriptor(new BLE2902());
+  //pControlCharacteristic->addDescriptor(new BLE2902());
+  pServer->setCallbacks(new ConnectionCallbacks());
+  pControlCharacteristic->setCallbacks(new Characteristicbacks());
+  pStatusCharacteristic->addDescriptor(new BLE2902());
 
   // Start the service
   pService->start();
 
   // Start advertising
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->addServiceUUID(VR_TREADMILL_SERVICE_UUID);
   pAdvertising->setScanResponse(false);
   pAdvertising->setMinPreferred(0x0);  // set value to 0x00 to not advertise this parameter
   BLEDevice::startAdvertising();
@@ -125,7 +131,7 @@ void loop() {
         pStatusCharacteristic->setValue((uint8_t*)&status, 1);
         pStatusCharacteristic->notify();
 
-        pControlCharacteristic->getValue();
+        
 
         if(control==RUNNING)
         {
